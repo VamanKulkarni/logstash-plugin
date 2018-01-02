@@ -36,8 +36,11 @@ import net.sf.json.JSONObject;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang.exception.ExceptionUtils;
 
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+
 import java.io.IOException;
 import java.io.OutputStream;
+import java.nio.charset.Charset;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
@@ -53,18 +56,20 @@ import java.util.List;
  */
 public class LogstashWriter {
 
-  final OutputStream errorStream;
-  final Run<?, ?> build;
-  final TaskListener listener;
-  final BuildData buildData;
-  final String jenkinsUrl;
-  final LogstashIndexerDao dao;
+  private final OutputStream errorStream;
+  private final Run<?, ?> build;
+  private final TaskListener listener;
+  private final BuildData buildData;
+  private final String jenkinsUrl;
+  private final LogstashIndexerDao dao;
   private boolean connectionBroken;
+  private Charset charset;
 
-  public LogstashWriter(Run<?, ?> run, OutputStream error, TaskListener listener) {
+  public LogstashWriter(Run<?, ?> run, OutputStream error, TaskListener listener, Charset charset) {
     this.errorStream = error != null ? error : System.err;
     this.build = run;
     this.listener = listener;
+    this.charset = charset;
     this.dao = this.getDaoOrNull();
     if (this.dao == null) {
       this.jenkinsUrl = "";
@@ -72,7 +77,23 @@ public class LogstashWriter {
     } else {
       this.jenkinsUrl = getJenkinsUrl();
       this.buildData = getBuildData();
+      dao.setCharset(charset);
     }
+  }
+
+  /**
+   * gets the charset that Jenkins is using during this build.
+   * @return
+   */
+  public Charset getCharset()
+  {
+    return charset;
+  }
+
+  // for testing only
+  LogstashIndexerDao getDao()
+  {
+    return dao;
   }
 
   /**
@@ -128,9 +149,10 @@ public class LogstashWriter {
   }
 
   // Method to encapsulate calls for unit-testing
-  LogstashIndexerDao getDao() throws InstantiationException {
+  LogstashIndexerDao createDao() throws InstantiationException {
     LogstashInstallation.Descriptor descriptor = LogstashInstallation.getLogstashDescriptor();
-    return IndexerDaoFactory.getInstance(descriptor.type, descriptor.host, descriptor.port, descriptor.key, descriptor.username, descriptor.password);
+    return IndexerDaoFactory.getInstance(descriptor.getType(), descriptor.getHost(), descriptor.getPort(),
+        descriptor.getKey(), descriptor.getUsername(), descriptor.getPassword());
   }
 
   BuildData getBuildData() {
@@ -141,6 +163,8 @@ public class LogstashWriter {
     }
   }
 
+  @SuppressFBWarnings(value="NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE",
+      justification="Jenkins 2.0 will never return null. So wait for upgrade.")
   String getJenkinsUrl() {
     return Jenkins.getInstance().getRootUrl();
   }
@@ -168,7 +192,7 @@ public class LogstashWriter {
    */
   private LogstashIndexerDao getDaoOrNull() {
     try {
-      return getDao();
+      return createDao();
     } catch (InstantiationException e) {
       String msg =  ExceptionUtils.getMessage(e) + "\n" +
         "[logstash-plugin]: Unable to instantiate LogstashIndexerDao with current configuration.\n";
@@ -184,7 +208,7 @@ public class LogstashWriter {
   private void logErrorMessage(String msg) {
     try {
       connectionBroken = true;
-      errorStream.write(msg.getBytes());
+      errorStream.write(msg.getBytes(charset));
       errorStream.flush();
     } catch (IOException ex) {
       // This should never happen, but if it does we just have to let it go.

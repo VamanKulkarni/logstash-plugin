@@ -114,8 +114,8 @@ public class ElasticSearchDaoTest {
     assertEquals("Wrong key", "logstash", dao.key);
     assertEquals("Wrong name", "username", dao.username);
     assertEquals("Wrong password", "password", dao.password);
-    assertEquals("Wrong auth", "dXNlcm5hbWU6cGFzc3dvcmQ=", dao.auth);
-    assertEquals("Wrong uri", new URI("https://localhost:8200/logstash"), dao.uri);
+    assertEquals("Wrong auth", "dXNlcm5hbWU6cGFzc3dvcmQ=", dao.getAuth());
+    assertEquals("Wrong uri", new URI("https://localhost:8200/logstash"), dao.getUri());
   }
 
   @Test
@@ -129,8 +129,8 @@ public class ElasticSearchDaoTest {
     assertEquals("Wrong key", "jenkins/logstash", dao.key);
     assertEquals("Wrong name", "", dao.username);
     assertEquals("Wrong password", "password", dao.password);
-    assertEquals("Wrong auth", null, dao.auth);
-    assertEquals("Wrong uri", new URI("http://localhost:8200/jenkins/logstash"), dao.uri);
+    assertEquals("Wrong auth", null, dao.getAuth());
+    assertEquals("Wrong uri", new URI("http://localhost:8200/jenkins/logstash"), dao.getUri());
   }
 
   @Test
@@ -144,8 +144,8 @@ public class ElasticSearchDaoTest {
     assertEquals("Wrong key", "/jenkins//logstash/", dao.key);
     assertEquals("Wrong name", "userlongername", dao.username);
     assertEquals("Wrong password", null, dao.password);
-    assertEquals("Wrong auth", "dXNlcmxvbmdlcm5hbWU6", dao.auth);
-    assertEquals("Wrong uri", new URI("http://localhost:8200/jenkins//logstash/"), dao.uri);
+    assertEquals("Wrong auth", "dXNlcmxvbmdlcm5hbWU6", dao.getAuth());
+    assertEquals("Wrong uri", new URI("http://localhost:8200/jenkins//logstash/"), dao.getUri());
   }
 
   @Test
@@ -229,5 +229,22 @@ public class ElasticSearchDaoTest {
         throw e;
     }
 
+  }
+  @Test
+  public void getHttpPostSuccessWithUserInput() {
+    String json = "{ 'foo': 'bar' }";
+    dao = createDao("http://localhost", 8200, "/jenkins/logstash", "", "");
+    String mimeType = "application/json";
+    HttpPost post = dao.getHttpPost(json, mimeType);
+    HttpEntity entity = post.getEntity();
+    assertEquals("Content type do not match", mimeType, entity.getContentType().getValue());
+  }
+  @Test
+  public void getHttpPostWithFallbackInput() {
+    String json = "{ 'foo': 'bar' }";
+    dao = createDao("http://localhost", 8200, "/jenkins/logstash", "", "");
+    HttpPost post = dao.getHttpPost(json);
+    HttpEntity entity = post.getEntity();
+    assertEquals("Content type do not match", ContentType.APPLICATION_JSON.toString(), entity.getContentType().getValue());
   }
 }

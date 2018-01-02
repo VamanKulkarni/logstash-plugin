@@ -40,10 +40,18 @@ import org.apache.http.client.utils.URIBuilder;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.PrintStream;
+import java.io.UnsupportedEncodingException;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
+import java.util.logging.Logger;
 
 import com.google.common.collect.Range;
+
+import jenkins.model.Jenkins;
+import jenkins.plugins.logstash.LogstashInstallation;
+import jenkins.plugins.logstash.LogstashInstallation.Descriptor;
 
 /**
  * Elastic Search Data Access Object.
@@ -52,10 +60,11 @@ import com.google.common.collect.Range;
  * @since 1.0.4
  */
 public class ElasticSearchDao extends AbstractLogstashIndexerDao {
-  final HttpClientBuilder clientBuilder;
-  final URI uri;
-  final String auth;
-  final Range<Integer> successCodes = closedOpen(200,300);
+  private final HttpClientBuilder clientBuilder;
+  private final URI uri;
+  private final String auth;
+  private final Range<Integer> successCodes = closedOpen(200,300);
+  private final static Logger log = Logger.getLogger(ElasticSearchDao.class.getName());
 
   //primary constructor used by indexer factory
   public ElasticSearchDao(String host, int port, String key, String username, String password) {
@@ -85,7 +94,7 @@ public class ElasticSearchDao extends AbstractLogstashIndexerDao {
     }
 
     if (StringUtils.isNotBlank(username)) {
-      auth = Base64.encodeBase64String((username + ":" + StringUtils.defaultString(password)).getBytes());
+      auth = Base64.encodeBase64String((username + ":" + StringUtils.defaultString(password)).getBytes(StandardCharsets.UTF_8));
     } else {
       auth = null;
     }
@@ -93,10 +102,35 @@ public class ElasticSearchDao extends AbstractLogstashIndexerDao {
     clientBuilder = factory == null ? HttpClientBuilder.create() : factory;
   }
 
+  // for testing only
+  String getAuth()
+  {
+    return auth;
+  }
+
+  //for testing only
+  URI getUri()
+  {
+    return uri;
+  }
+
   HttpPost getHttpPost(String data) {
-    HttpPost postRequest;
-    postRequest = new HttpPost(uri);
-    StringEntity input = new StringEntity(data, ContentType.APPLICATION_JSON);
+    String mimeType = null;
+    try {
+      Descriptor logstashPluginConfig = (Descriptor) Jenkins.getInstance().getDescriptor(LogstashInstallation.class);
+      mimeType = logstashPluginConfig.mimeType;
+    } catch (NullPointerException e) {
+      log.warning("Unable to read mimetype from jenkins logstash plugin configuration");
+    }
+    return getHttpPost(data, mimeType);
+  }
+  // Re-factored for unit-testing
+  HttpPost getHttpPost(String data, String mimeType) {
+    HttpPost postRequest = new HttpPost(uri);
+    // char encoding is set to UTF_8 since this request posts a JSON string
+    StringEntity input = new StringEntity(data, StandardCharsets.UTF_8);
+    mimeType = (mimeType != null) ? mimeType : ContentType.APPLICATION_JSON.toString();
+    input.setContentType(mimeType);
     postRequest.setEntity(input);
     if (auth != null) {
       postRequest.addHeader("Authorization", "Basic " + auth);
@@ -132,7 +166,7 @@ public class ElasticSearchDao extends AbstractLogstashIndexerDao {
     PrintStream stream = null;
     try {
       byteStream = new ByteArrayOutputStream();
-      stream = new PrintStream(byteStream);
+      stream = new PrintStream(byteStream, true, StandardCharsets.UTF_8.name());
 
       try {
         stream.print("HTTP error code: ");
@@ -145,7 +179,11 @@ public class ElasticSearchDao extends AbstractLogstashIndexerDao {
         stream.println(ExceptionUtils.getStackTrace(e));
       }
       stream.flush();
-      return byteStream.toString();
+      return byteStream.toString(StandardCharsets.UTF_8.name());
+    }
+    catch (UnsupportedEncodingException e)
+    {
+      return ExceptionUtils.getStackTrace(e);
     } finally {
       if (stream != null) {
         stream.close();
